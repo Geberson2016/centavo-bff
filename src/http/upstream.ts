@@ -1,5 +1,6 @@
 import type { FastifyRequest } from 'fastify';
 import { UpstreamResponseError } from './errors.ts';
+import { requireSession } from './session.ts';
 
 interface FetchResult<T> {
   data?: T;
@@ -15,11 +16,11 @@ export function unwrap<T>(result: FetchResult<T>): T {
   return result.data;
 }
 
-// Provisório até o C16: repassa o Bearer que a UI mandou. Depois o token sai da
-// sessão em cookie e o browser nunca mais o vê.
+// Header Authorization para o Spring, montado a partir do JWT guardado na sessão.
+// Sem sessão válida lança UnauthenticatedError (401) antes de chamar o Spring.
 export function forwardAuth(request: FastifyRequest): {
   headers: Record<string, string>;
 } {
-  const authorization = request.headers.authorization;
-  return { headers: authorization ? { Authorization: authorization } : {} };
+  const { token } = requireSession(request);
+  return { headers: { Authorization: `Bearer ${token}` } };
 }

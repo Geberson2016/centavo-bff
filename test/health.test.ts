@@ -1,12 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app.ts';
-import { loadConfig } from '../src/config.ts';
+import { buildTestApp } from './helpers.ts';
 
 describe('GET /health', () => {
-  let app: Awaited<ReturnType<typeof buildApp>>;
+  let app: Awaited<ReturnType<typeof buildTestApp>>;
 
   beforeAll(async () => {
-    app = await buildApp(loadConfig({ NODE_ENV: 'test' }));
+    app = await buildTestApp();
   });
 
   afterAll(() => app.close());

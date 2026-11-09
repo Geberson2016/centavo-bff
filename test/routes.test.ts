@@ -1,8 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { PROBLEM_JSON, buildTestApp, startFakeBackend } from './helpers.ts';
+import {
+  PROBLEM_JSON,
+  buildTestApp,
+  fakeJwt,
+  loginCookie,
+  startFakeBackend,
+} from './helpers.ts';
 
-const TOKEN = 'Bearer token-de-teste';
+const JWT = fakeJwt(3600);
+const TOKEN = `Bearer ${JWT}`;
 
 const summary = {
   totalBalance: 10,
@@ -35,6 +42,7 @@ const accountSummary = [
 describe('rotas /bff repassando ao Spring', () => {
   let backend: FastifyInstance;
   let app: FastifyInstance;
+  let cookie: string;
   const seenAuth: Array<string | undefined> = [];
   let failRecent = false;
 
@@ -67,7 +75,7 @@ describe('rotas /bff repassando ao Spring', () => {
         id: 7,
         name: 'A',
         email: 'a@a.com',
-        token: 'jwt',
+        token: JWT,
       }));
       s.get('/api/v1/dashboard/summary', async () => summary);
       s.get('/api/v1/transactions/recent', async (_req, reply) =>
@@ -82,6 +90,7 @@ describe('rotas /bff repassando ao Spring', () => {
     });
     backend = fake.server;
     app = await buildTestApp({ BACKEND_URL: fake.url });
+    cookie = await loginCookie(app);
   });
 
   afterAll(async () => {
@@ -89,12 +98,12 @@ describe('rotas /bff repassando ao Spring', () => {
     await backend.close();
   });
 
-  it('GET /bff/accounts repassa o Authorization e devolve o corpo do Spring', async () => {
+  it('GET /bff/accounts usa o JWT da sessão e devolve o corpo do Spring', async () => {
     seenAuth.length = 0;
     const res = await app.inject({
       method: 'GET',
       url: '/bff/accounts',
-      headers: { authorization: TOKEN },
+      headers: { cookie },
     });
 
     expect(res.statusCode).toBe(200);
@@ -104,18 +113,11 @@ describe('rotas /bff repassando ao Spring', () => {
     expect(seenAuth).toEqual([TOKEN]);
   });
 
-  it('403 sem corpo do Spring chega igual na UI', async () => {
-    const res = await app.inject({ method: 'GET', url: '/bff/accounts' });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.body).toBe('');
-  });
-
   it('POST /bff/accounts devolve 201 com o corpo criado', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/bff/accounts',
-      headers: { authorization: TOKEN },
+      headers: { cookie },
       payload: { name: 'Caixa', type: 'CASH' },
     });
 
@@ -132,7 +134,7 @@ describe('rotas /bff repassando ao Spring', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/bff/transactions',
-      headers: { authorization: TOKEN },
+      headers: { cookie },
       payload: { description: 'x' },
     });
 
@@ -145,25 +147,12 @@ describe('rotas /bff repassando ao Spring', () => {
     });
   });
 
-  it('login é público: não repassa Authorization', async () => {
-    seenAuth.length = 0;
-    const res = await app.inject({
-      method: 'POST',
-      url: '/bff/users/login',
-      headers: { authorization: TOKEN },
-      payload: { email: 'a@a.com', password: '123456' },
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(seenAuth).toEqual([undefined]);
-  });
-
   it('GET /bff/dashboard agrega as três chamadas', async () => {
     failRecent = false;
     const res = await app.inject({
       method: 'GET',
       url: '/bff/dashboard',
-      headers: { authorization: TOKEN },
+      headers: { cookie },
     });
 
     expect(res.statusCode).toBe(200);
@@ -179,7 +168,7 @@ describe('rotas /bff repassando ao Spring', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/bff/dashboard',
-      headers: { authorization: TOKEN },
+      headers: { cookie },
     });
 
     expect(res.statusCode).toBe(500);
@@ -190,7 +179,7 @@ describe('rotas /bff repassando ao Spring', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/bff/accounts',
-      headers: { authorization: TOKEN, 'content-type': 'application/json' },
+      headers: { cookie, 'content-type': 'application/json' },
       payload: '{nao-e-json',
     });
 
@@ -200,6 +189,7 @@ describe('rotas /bff repassando ao Spring', () => {
   });
 });
 
+// Usa o cadastro (rota pública) para chegar ao Spring sem precisar de sessão.
 describe('Spring indisponível', () => {
   it('conexão recusada vira 502 UPSTREAM_UNAVAILABLE', async () => {
     // Sobe e derruba um servidor para ter uma porta garantidamente fechada.
@@ -207,7 +197,11 @@ describe('Spring indisponível', () => {
     await server.close();
     const app = await buildTestApp({ BACKEND_URL: url });
 
-    const res = await app.inject({ method: 'GET', url: '/bff/accounts' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bff/users/register',
+      payload: { name: 'A', email: 'a@a.com', password: '123456' },
+    });
     await app.close();
 
     expect(res.statusCode).toBe(502);
@@ -220,9 +214,9 @@ describe('Spring indisponível', () => {
 
   it('timeout vira 502 UPSTREAM_UNAVAILABLE', async () => {
     const { server, url } = await startFakeBackend((s) => {
-      s.get('/api/v1/accounts', async () => {
+      s.post('/api/v1/users/register', async () => {
         await new Promise((resolve) => setTimeout(resolve, 500));
-        return [];
+        return { name: 'A' };
       });
     });
     const app = await buildTestApp({
@@ -230,7 +224,11 @@ describe('Spring indisponível', () => {
       BACKEND_TIMEOUT_MS: '50',
     });
 
-    const res = await app.inject({ method: 'GET', url: '/bff/accounts' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/bff/users/register',
+      payload: { name: 'A', email: 'a@a.com', password: '123456' },
+    });
     await app.close();
     await server.close();
 

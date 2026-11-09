@@ -38,9 +38,13 @@ O BFF **encaminha, agrega e adapta**. Ele monta view-models para a UI, junta cha
 
 TypeScript `strict`, sem `any`. O env é validado no boot; respostas do Spring usam os tipos gerados. Corpo de request que o BFF só repassa não é revalidado aqui: quem valida é o Spring (§1.1). Se o BFF passar a **usar** um campo, ele valida antes. Dinheiro nunca entra em conta no BFF: é só repassado.
 
-### 1.5 Segurança da sessão (C16+)
+### 1.5 Sessão e segurança
 
-A sessão vai em cookie `httpOnly`, `Secure` e `SameSite`. O JWT do Spring nunca chega ao browser.
+- A sessão é um cookie `centavo_session` **cifrado** (`@fastify/secure-session`, libsodium) com o JWT do Spring dentro: `httpOnly`, `SameSite=Lax` e `Secure` em produção. Não há estado no servidor. O JWT do Spring **nunca** chega ao browser, nem no corpo nem em header.
+- A sessão vale o mesmo tempo que o JWT (lido do `exp`). Sessão vencida, adulterada ou recusada pelo Spring (403) vira `401 UNAUTHENTICATED` e o cookie é apagado.
+- As rotas autenticadas pegam o token **só** da sessão (`forwardAuth`). Um `Authorization` vindo da UI é ignorado.
+- **CSRF**: `SameSite=Lax` mais o aceite de **apenas `application/json`** (outros content types recebem 415). Não reative o parser de `text/plain` nem adicione parsers de formulário.
+- Limite conhecido: por não ter estado, o logout apaga o cookie mas não revoga uma cópia dele até o JWT expirar. A `SESSION_KEY` é obrigatória e trocá-la derruba todas as sessões.
 
 ### 1.6 Definition of Done
 

@@ -9,3 +9,4 @@ export type AccountRequest = Schemas['AccountRequest'];
 export type CategoryRequest = Schemas['CategoryRequest'];
 export type TransactionRequest = Schemas['TransactionRequest'];
 export type DashboardView = Schemas['DashboardView'];
+export type SessionUser = Schemas['SessionUser'];

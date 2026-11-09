@@ -14,12 +14,12 @@ Este arquivo orienta o Claude Code (claude.ai/code) ao trabalhar neste repositó
 
 ## Visão geral
 
-BFF do Centavo em Fastify 5 + TypeScript (ESM, Node 24). Fica entre a UI (`centavo-frontend`) e a API Spring (`centavo-backend`). Expõe em `/bff/*` só o que a UI usa, repassando ao Spring (C15), mais o `/health`. A sessão em cookie entra no C16 (ver `../docs/planos/plano-evolucao.md`); até lá o `Authorization` da UI é repassado ao Spring.
+BFF do Centavo em Fastify 5 + TypeScript (ESM, Node 24). Fica entre a UI (`centavo-frontend`) e a API Spring (`centavo-backend`). Expõe em `/bff/*` só o que a UI usa, repassando ao Spring, mais o `/health`. A autenticação é por sessão em cookie cifrado (`/bff/session`: login, usuário atual e logout); o JWT do Spring fica dentro do cookie e nunca vai para o browser (ver AGENTS.md §1.5 e `../docs/planos/plano-evolucao.md`).
 
 ## Comandos
 
 ```bash
-npm run dev        # tsx em watch; lê .env se existir (porta padrão 3000)
+npm run dev        # tsx em watch; lê o .env (precisa de SESSION_KEY; porta padrão 3000)
 npm test           # Vitest
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
@@ -33,9 +33,9 @@ npm run api:check      # sync + generate e falha se algo versionado ficou desatu
 ## Fluxo de uma rota
 
 1. Descreva a rota no `openapi.yaml` (schemas do Spring via `$ref` para `./contracts/backend.openapi.yaml`) e rode `npm run api:generate`.
-2. Implemente em `src/routes/`: chame o Spring com `app.backend.GET/POST(...)` (openapi-fetch tipado), passe o resultado no `unwrap()` e use `forwardAuth(request)` nas rotas autenticadas.
+2. Implemente em `src/routes/`: chame o Spring com `app.backend.GET/POST(...)` (openapi-fetch tipado), passe o resultado no `unwrap()` e use `forwardAuth(request)` nas rotas autenticadas. Ele lê o JWT da sessão e lança 401 se não houver sessão.
 3. Erros não são tratados na rota. O `unwrap()` lança `UpstreamResponseError`, que o error handler (`src/http/error-handler.ts`) repassa com o status, o content-type e o corpo do Spring. Falha de rede ou timeout vira `502 UPSTREAM_UNAVAILABLE`.
-4. O `test/contract.test.ts` falha se uma operação do `openapi.yaml` não tiver rota registrada. Teste a rota em `test/routes.test.ts` contra o Spring falso (`startFakeBackend`).
+4. O `test/contract.test.ts` falha se uma operação do `openapi.yaml` não tiver rota registrada. Teste a rota em `test/routes.test.ts` contra o Spring falso (`startFakeBackend`), usando `loginCookie(app)` para obter a sessão.
 
 ## Convenções
 

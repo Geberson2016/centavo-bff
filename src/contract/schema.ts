@@ -21,21 +21,28 @@ export type paths = {
         patch?: never;
         trace?: never;
     };
-    "/bff/users/login": {
+    "/bff/session": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Usuário da sessão atual
+         * @description Usado pela UI para saber se há sessão (por exemplo, ao abrir o app).
+         */
+        get: operations["getSession"];
         put?: never;
         /**
-         * Autentica o usuário e devolve o JWT
-         * @description Provisório — no C16 passa a abrir a sessão em cookie e deixa de devolver o token.
+         * Autentica o usuário e abre a sessão
+         * @description Troca as credenciais pelo JWT do Spring e devolve o cookie `centavo_session` com o
+         *     JWT cifrado. A sessão expira junto com o JWT (hoje, 1 dia). O token não aparece
+         *     no corpo da resposta.
          */
         post: operations["login"];
-        delete?: never;
+        /** Encerra a sessão */
+        delete: operations["logout"];
         options?: never;
         head?: never;
         patch?: never;
@@ -119,6 +126,17 @@ export type paths = {
 export type webhooks = Record<string, never>;
 export type components = {
     schemas: {
+        SessionUser: {
+            /** Format: int64 */
+            id: number;
+            name: string;
+            email: string;
+            /**
+             * Format: date-time
+             * @description Quando a sessão expira (o mesmo instante do JWT do Spring)
+             */
+            expiresAt: string;
+        };
         DashboardView: {
             summary: components["schemas"]["DashboardSummaryResponse"];
             recentTransactions: components["schemas"]["RecentTransactionResponse"][];
@@ -139,7 +157,7 @@ export type components = {
          * @description Os códigos do Spring mais os do próprio BFF.
          * @enum {string}
          */
-        ErrorCode: "ACCOUNT_NOT_FOUND" | "CATEGORY_NOT_FOUND" | "TRANSACTION_NOT_FOUND" | "EMAIL_ALREADY_EXISTS" | "TRANSACTION_CATEGORY_TYPE_MISMATCH" | "INVALID_CREDENTIALS" | "VALIDATION_ERROR" | "INTERNAL_ERROR" | "UPSTREAM_UNAVAILABLE";
+        ErrorCode: "ACCOUNT_NOT_FOUND" | "CATEGORY_NOT_FOUND" | "TRANSACTION_NOT_FOUND" | "EMAIL_ALREADY_EXISTS" | "TRANSACTION_CATEGORY_TYPE_MISMATCH" | "INVALID_CREDENTIALS" | "VALIDATION_ERROR" | "INTERNAL_ERROR" | "UPSTREAM_UNAVAILABLE" | "UNAUTHENTICATED";
         UserRequest: {
             name: string;
             /** Format: email */
@@ -162,14 +180,6 @@ export type components = {
             /** Format: email */
             email: string;
             password: string;
-        };
-        UserResponse: {
-            /** Format: int64 */
-            id: number;
-            name: string;
-            email: string;
-            /** @description JWT a enviar como `Authorization: Bearer <token>` */
-            token: string;
         };
         /** @enum {string} */
         AccountType: "CHECKING" | "SAVINGS" | "INVESTMENT" | "CASH" | "CREDIT_CARD";
@@ -297,12 +307,14 @@ export type components = {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description Token ausente, inválido ou expirado (sem corpo) */
-        Forbidden: {
+        /** @description Sem sessão, sessão expirada ou recusada pelo Spring (`UNAUTHENTICATED`) */
+        Unauthenticated: {
             headers: {
                 [name: string]: unknown;
             };
-            content?: never;
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
         };
         /** @description O Spring não respondeu a tempo ou está fora do ar (`UPSTREAM_UNAVAILABLE`) */
         UpstreamUnavailable: {
@@ -348,6 +360,27 @@ export interface operations {
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
+    getSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessão válida */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
+                };
+            };
+            401: components["responses"]["Unauthenticated"];
+        };
+    };
     login: {
         parameters: {
             query?: never;
@@ -361,18 +394,46 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Autenticado */
+            /** @description Sessão aberta */
             200: {
+                headers: {
+                    /** @description `centavo_session`, httpOnly, SameSite=Lax */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SessionUser"];
+                };
+            };
+            400: components["responses"]["ValidationError"];
+            /** @description E-mail ou senha inválidos (`INVALID_CREDENTIALS`) */
+            401: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserResponse"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            400: components["responses"]["ValidationError"];
-            401: components["responses"]["Problem"];
             502: components["responses"]["UpstreamUnavailable"];
+        };
+    };
+    logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Sessão encerrada (cookie removido). Idempotente. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     listAccounts: {
@@ -393,7 +454,7 @@ export interface operations {
                     "application/json": components["schemas"]["AccountResponse"][];
                 };
             };
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
@@ -420,7 +481,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
@@ -442,7 +503,7 @@ export interface operations {
                     "application/json": components["schemas"]["CategoryResponse"][];
                 };
             };
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
@@ -469,7 +530,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
@@ -496,7 +557,7 @@ export interface operations {
                 };
             };
             400: components["responses"]["ValidationError"];
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             404: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
             502: components["responses"]["UpstreamUnavailable"];
@@ -520,7 +581,7 @@ export interface operations {
                     "application/json": components["schemas"]["DashboardView"];
                 };
             };
-            403: components["responses"]["Forbidden"];
+            401: components["responses"]["Unauthenticated"];
             502: components["responses"]["UpstreamUnavailable"];
         };
     };
@@ -533,7 +594,7 @@ type ReadonlyArray<T> = [
 ] extends [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
-export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["ACCOUNT_NOT_FOUND", "CATEGORY_NOT_FOUND", "TRANSACTION_NOT_FOUND", "EMAIL_ALREADY_EXISTS", "TRANSACTION_CATEGORY_TYPE_MISMATCH", "INVALID_CREDENTIALS", "VALIDATION_ERROR", "INTERNAL_ERROR", "UPSTREAM_UNAVAILABLE"];
+export const errorCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["ErrorCode"]> = ["ACCOUNT_NOT_FOUND", "CATEGORY_NOT_FOUND", "TRANSACTION_NOT_FOUND", "EMAIL_ALREADY_EXISTS", "TRANSACTION_CATEGORY_TYPE_MISMATCH", "INVALID_CREDENTIALS", "VALIDATION_ERROR", "INTERNAL_ERROR", "UPSTREAM_UNAVAILABLE", "UNAUTHENTICATED"];
 export const accountTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["AccountType"]> = ["CHECKING", "SAVINGS", "INVESTMENT", "CASH", "CREDIT_CARD"];
 export const transactionTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TransactionType"]> = ["INCOME", "EXPENSE"];
 export const budgetTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["BudgetType"]> = ["FIXED", "VARIABLE"];

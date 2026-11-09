@@ -1,6 +1,10 @@
 import type { FastifyError, FastifyInstance, FastifyReply } from 'fastify';
 import type { components } from '../contract/schema.ts';
-import { UpstreamResponseError, UpstreamUnavailableError } from './errors.ts';
+import {
+  UnauthenticatedError,
+  UpstreamResponseError,
+  UpstreamUnavailableError,
+} from './errors.ts';
 
 type Problem = components['schemas']['Problem'];
 
@@ -14,6 +18,17 @@ function sendProblem(reply: FastifyReply, problem: Problem) {
 // Todo erro sai como RFC 7807 com `code` estável, no mesmo formato do Spring.
 export function registerErrorHandler(app: FastifyInstance) {
   app.setErrorHandler((error: FastifyError, request, reply) => {
+    if (error instanceof UnauthenticatedError) {
+      return sendProblem(reply, { status: 401, code: 'UNAUTHENTICATED' });
+    }
+
+    // O Spring responde 403 sem corpo quando recusa o token (expirado, segredo
+    // trocado…). Para a UI isso é sessão inválida: apaga o cookie e devolve 401.
+    if (error instanceof UpstreamResponseError && error.status === 403) {
+      request.session.delete();
+      return sendProblem(reply, { status: 401, code: 'UNAUTHENTICATED' });
+    }
+
     if (error instanceof UpstreamResponseError) {
       reply.code(error.status);
       if (error.contentType) reply.type(error.contentType);

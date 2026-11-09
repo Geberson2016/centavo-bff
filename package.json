@@ -19,6 +19,7 @@
     "api:check": "npm run contract:sync && npm run api:generate && git diff --exit-code -- contracts src/backend/schema.ts src/contract/schema.ts"
   },
   "dependencies": {
+    "@fastify/secure-session": "^8.4.2",
     "fastify": "^5.12.8",
     "openapi-fetch": "^0.17.0",
     "zod": "^4.6.7"

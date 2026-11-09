@@ -10,8 +10,14 @@ info:
     (`contracts/backend.openapi.yaml`, cópia sincronizada por `npm run contract:sync`);
     aqui ficam só as rotas e os view-models próprios do BFF.
 
-    **Autenticação (provisória até o C16):** o header `Authorization: Bearer <token>` é
-    repassado ao Spring sem alteração. No C16 ele dá lugar à sessão em cookie httpOnly.
+    **Autenticação:** sessão em cookie `centavo_session` (httpOnly, SameSite=Lax, Secure em
+    produção), aberta em `POST /bff/session`. O cookie leva o JWT do Spring **cifrado**: o
+    browser nunca vê o token. Sem sessão válida, as rotas protegidas devolvem
+    `401 UNAUTHENTICATED` sem chamar o Spring.
+
+    **CSRF:** além do SameSite=Lax, toda escrita exige `Content-Type: application/json`
+    (que um formulário de outro site não consegue enviar sem preflight de CORS). Outro
+    content type recebe `415 VALIDATION_ERROR`.
 
     **Erros:** RFC 7807 com `code` estável. Os erros do Spring passam intactos (status,
     corpo e `code`); o BFF só acrescenta `UPSTREAM_UNAVAILABLE`, quando o Spring não
@@ -20,10 +26,12 @@ servers:
   - url: http://localhost:3000
     description: Execução local
 security:
-  - bearerAuth: []
+  - cookieAuth: []
 tags:
+  - name: Session
+    description: Login, usuário da sessão e logout
   - name: Users
-    description: Cadastro e autenticação
+    description: Cadastro
   - name: Accounts
     description: Contas do usuário
   - name: Categories
@@ -60,12 +68,15 @@ paths:
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
 
-  /bff/users/login:
+  /bff/session:
     post:
-      tags: [Users]
+      tags: [Session]
       operationId: login
-      summary: Autentica o usuário e devolve o JWT
-      description: Provisório — no C16 passa a abrir a sessão em cookie e deixa de devolver o token.
+      summary: Autentica o usuário e abre a sessão
+      description: |
+        Troca as credenciais pelo JWT do Spring e devolve o cookie `centavo_session` com o
+        JWT cifrado. A sessão expira junto com o JWT (hoje, 1 dia). O token não aparece
+        no corpo da resposta.
       security: []
       requestBody:
         required: true
@@ -75,17 +86,48 @@ paths:
               $ref: './contracts/backend.openapi.yaml#/components/schemas/AuthRequest'
       responses:
         '200':
-          description: Autenticado
+          description: Sessão aberta
+          headers:
+            Set-Cookie:
+              description: '`centavo_session`, httpOnly, SameSite=Lax'
+              schema:
+                type: string
           content:
             application/json:
               schema:
-                $ref: './contracts/backend.openapi.yaml#/components/schemas/UserResponse'
+                $ref: '#/components/schemas/SessionUser'
         '400':
           $ref: '#/components/responses/ValidationError'
         '401':
-          $ref: '#/components/responses/Problem'
+          description: E-mail ou senha inválidos (`INVALID_CREDENTIALS`)
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
+    get:
+      tags: [Session]
+      operationId: getSession
+      summary: Usuário da sessão atual
+      description: 'Usado pela UI para saber se há sessão (por exemplo, ao abrir o app).'
+      responses:
+        '200':
+          description: Sessão válida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionUser'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+    delete:
+      tags: [Session]
+      operationId: logout
+      summary: Encerra a sessão
+      security: []
+      responses:
+        '204':
+          description: Sessão encerrada (cookie removido). Idempotente.
 
   /bff/accounts:
     get:
@@ -101,8 +143,8 @@ paths:
                 type: array
                 items:
                   $ref: './contracts/backend.openapi.yaml#/components/schemas/AccountResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
     post:
@@ -124,8 +166,8 @@ paths:
                 $ref: './contracts/backend.openapi.yaml#/components/schemas/AccountResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
 
@@ -143,8 +185,8 @@ paths:
                 type: array
                 items:
                   $ref: './contracts/backend.openapi.yaml#/components/schemas/CategoryResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
     post:
@@ -166,8 +208,8 @@ paths:
                 $ref: './contracts/backend.openapi.yaml#/components/schemas/CategoryResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
 
@@ -191,8 +233,8 @@ paths:
                 $ref: './contracts/backend.openapi.yaml#/components/schemas/TransactionResponse'
         '400':
           $ref: '#/components/responses/ValidationError'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '404':
           $ref: '#/components/responses/Problem'
         '422':
@@ -215,17 +257,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DashboardView'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
         '502':
           $ref: '#/components/responses/UpstreamUnavailable'
 
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: centavo_session
 
   responses:
     Problem:
@@ -240,8 +282,12 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
-    Forbidden:
-      description: Token ausente, inválido ou expirado (sem corpo)
+    Unauthenticated:
+      description: Sem sessão, sessão expirada ou recusada pelo Spring (`UNAUTHENTICATED`)
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
     UpstreamUnavailable:
       description: O Spring não respondeu a tempo ou está fora do ar (`UPSTREAM_UNAVAILABLE`)
       content:
@@ -250,6 +296,22 @@ components:
             $ref: '#/components/schemas/Problem'
 
   schemas:
+    SessionUser:
+      type: object
+      required: [id, name, email, expiresAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+        email:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+          description: Quando a sessão expira (o mesmo instante do JWT do Spring)
+
     DashboardView:
       type: object
       required: [summary, recentTransactions, accounts]
@@ -301,3 +363,4 @@ components:
         - VALIDATION_ERROR
         - INTERNAL_ERROR
         - UPSTREAM_UNAVAILABLE
+        - UNAUTHENTICATED

@@ -21,3 +21,11 @@ export class UpstreamResponseError extends Error {
     this.body = body;
   }
 }
+
+// Sem sessão, sessão vencida ou token recusado pelo Spring.
+export class UnauthenticatedError extends Error {
+  constructor() {
+    super('Sessão ausente ou expirada');
+    this.name = 'UnauthenticatedError';
+  }
+}
