@@ -15,6 +15,8 @@ const envSchema = z.object({
     .default('info'),
   // URL base da API Spring (sem o /api/v1), consumida a partir do C15.
   BACKEND_URL: z.url().default('http://localhost:8090'),
+  // Tempo máximo de cada chamada ao Spring; estourou, a UI recebe 502.
+  BACKEND_TIMEOUT_MS: z.coerce.number().int().positive().default(10000),
 });
 
 export type Config = z.infer<typeof envSchema>;

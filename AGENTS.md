@@ -25,9 +25,9 @@ O BFF **encaminha, agrega e adapta**. Ele monta view-models para a UI, junta cha
 
 ### 1.2 Contrato
 
-- O contrato com o Spring é o `openapi.yaml` do `centavo-backend` (`src/main/resources/openapi.yaml`). O client e os tipos para chamar o Spring são **gerados** dele, não escritos à mão (a partir do C15).
+- O contrato com o Spring é o `openapi.yaml` do `centavo-backend` (`src/main/resources/openapi.yaml`). Uma cópia fica versionada em `contracts/backend.openapi.yaml` (`npm run contract:sync`), para o repositório não depender do irmão no build. O client (openapi-fetch) e os tipos do Spring são **gerados** dela, nunca escritos à mão.
 - Erros do Spring chegam como RFC 7807 com `code` estável. O BFF **repassa o `code`** sem traduzir: quem resolve a mensagem localizada é o frontend.
-- Endpoints que o BFF expõe para a UI também são descritos em OpenAPI.
+- As rotas que o BFF expõe para a UI (`/bff/*`) são descritas no `openapi.yaml` da raiz, **antes** de serem implementadas. Um teste garante que toda operação do contrato tem rota registrada. O BFF expõe só o que a UI usa.
 
 ### 1.3 Configuração e segredos
 
@@ -36,7 +36,7 @@ O BFF **encaminha, agrega e adapta**. Ele monta view-models para a UI, junta cha
 
 ### 1.4 Type safety
 
-TypeScript `strict`, sem `any`. Dados externos (env, respostas do Spring, corpo de request) passam por validação ou por tipos gerados antes de serem usados. Dinheiro nunca é manipulado como `float`: é repassado como veio do Spring.
+TypeScript `strict`, sem `any`. O env é validado no boot; respostas do Spring usam os tipos gerados. Corpo de request que o BFF só repassa não é revalidado aqui: quem valida é o Spring (§1.1). Se o BFF passar a **usar** um campo, ele valida antes. Dinheiro nunca entra em conta no BFF: é só repassado.
 
 ### 1.5 Segurança da sessão (C16+)
 
@@ -60,7 +60,11 @@ src/
   config.ts        lê e valida o env (zod) → Config tipada
   app.ts           buildApp(config): monta o Fastify sem listen (usado pelos testes)
   server.ts        ponto de entrada: loadConfig → buildApp → listen + encerramento gracioso
-  routes/          um plugin Fastify por grupo de rotas
+  routes/          um plugin Fastify por grupo de rotas (/bff/*)
+  backend/         client do Spring (openapi-fetch) + schema.ts gerado
+  contract/        schema.ts gerado do openapi.yaml do BFF + apelidos
+  http/            unwrap/forwardAuth, erros upstream e o error handler RFC 7807
+contracts/         cópia versionada do openapi.yaml do Spring
 test/              Vitest; rotas testadas com app.inject(), sem abrir porta
 ```
 
