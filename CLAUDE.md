@@ -43,4 +43,4 @@ npm run api:check      # sync + generate e falha se algo versionado ficou desatu
 - Rota nova: plugin em `src/routes/`, registrado no `buildApp`, com teste via `app.inject()` em `test/`.
 - Arquivos gerados (`src/*/schema.ts`) e `contracts/` nunca são editados à mão e ficam fora do Prettier e do ESLint.
 - Prettier: aspas simples, ponto e vírgula, 2 espaços, trailing commas es5 (o mesmo do frontend).
-- Ambiente local: a API Spring sobe pelo `docker compose` em `~/Projects/Centavo` (`localhost:8090`); o front roda em `localhost:5173`.
+- Ambiente local: o stack inteiro sobe pelo `docker compose` do repositório irmão `centavo-infra` (este BFF vira o serviço `bff`, a partir do `Dockerfile`). Para desenvolver com hot reload, suba só `postgres backend` por lá (API em `localhost:8090`) e rode `npm run dev` aqui; o front em dev fica em `localhost:5173`.
