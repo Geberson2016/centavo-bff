@@ -11,6 +11,7 @@ Este arquivo orienta o Claude Code (claude.ai/code) ao trabalhar neste repositó
 2. **Contrato**: o `openapi.yaml` da raiz descreve as rotas `/bff/*` (FE↔BFF); o client do Spring é gerado da cópia `contracts/backend.openapi.yaml`. Os `code` de erro RFC 7807 passam sem tradução.
 3. **Config via env** validada em `src/config.ts`; sem segredos no git.
 4. **TS strict, sem `any`**.
+5. **Fluxo no GitHub** — nada direto na `main`: issue → branch → PR, e quem faz o merge é o Geberson (ver `AGENTS.md §0.1` e `../docs/processo/fluxo-de-trabalho.md`).
 
 ## Visão geral
 
