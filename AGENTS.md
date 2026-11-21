@@ -13,6 +13,12 @@ O Centavo é um app de finanças pessoais: **React (Vite) → BFF (Node/TS) → 
 - Commits seguem Conventional Commits: prefixo técnico (`feat:`, `fix:`, `chore:`…) e texto em português.
 - Os **documentos de planejamento** ficam em `Centavo/docs/planos/` (repositório `centavo-docs`, irmão deste), por serem cross-repo.
 
+## 0.1 Fluxo de trabalho no GitHub (obrigatório em todo o projeto)
+
+- **Nada entra na `main` sem pull request.** Cada demanda vira uma issue, uma branch `<tipo>/<nº-da-issue>-<slug>` e um PR para a `main`. Quem aprova é o Geberson, fazendo o merge (só por squash). O GitHub recusa push direto na `main` (regra "Proteção da main").
+- O título do PR segue o Conventional Commits, porque vira o título do commit na `main`.
+- O passo a passo completo, inclusive para demandas que tocam vários repositórios, está em `Centavo/docs/processo/fluxo-de-trabalho.md` (repositório `centavo-docs`).
+
 ---
 
 ## 1. Convenções inegociáveis
@@ -54,6 +60,7 @@ TypeScript `strict`, sem `any`. O env é validado no boot; respostas do Spring u
 - [ ] `npm run typecheck`, `npm run lint` e `npm test` passam.
 - [ ] Rota nova tem teste com `app.inject()`.
 - [ ] Commit em Conventional Commits, texto em português.
+- [ ] Entrou por branch e PR ligados à issue (§0.1), nunca direto na `main`.
 
 ---
 
