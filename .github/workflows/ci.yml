@@ -1,0 +1,63 @@
+# Pipeline do BFF. O job "check" valida o próprio repositório; o "contract" baixa o
+# centavo-backend ao lado e falha se a cópia do contrato do Spring (contracts/) ou os tipos
+# gerados ficaram para trás. Ficam separados para o vermelho dizer qual dos dois quebrou.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Typecheck, lint, testes e build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  contract:
+    name: Contrato em dia com o backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Mesmo layout da máquina local: os repositórios lado a lado.
+      - uses: actions/checkout@v7
+        with:
+          path: centavo-bff
+
+      - uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository_owner }}/centavo-backend
+          path: centavo-backend
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: centavo-bff/package-lock.json
+
+      - run: npm ci
+        working-directory: centavo-bff
+
+      - name: npm run api:check
+        run: npm run api:check
+        working-directory: centavo-bff
